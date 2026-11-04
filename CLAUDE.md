@@ -93,6 +93,13 @@ a list of known names:
   complex, `None`, etc. are errors.
 - Security is deliberately not a concern: anyone who can run this can
   run arbitrary Python anyway.
+- `&` exists to reach advanced functions without adding code to `rpn.py`.
+  Dunder methods (`&__mod__:2`) still work, but the docs don't mention
+  them: they point to built-in operators (`**`) or `operator.*`
+  (`&operator.mod:2`) instead.
+- `%` stays percent (HP-12C), not modulo; most users of a currency
+  calculator want percent. `divmod` and other tuple-returning functions are
+  deliberately unsupported.
 
 ## Command files
 
@@ -151,3 +158,7 @@ printf '200\n15\n%%\n+\n' | python3 rpn.py
   make this more pressing: `2 &math.log` shows only `0.69`.
 - Optional banker's rounding (`ROUND_HALF_EVEN`) for `r`.
 - Validating comma placement in input.
+- Random-access commands (pick, roll, etc.), using the 1-based levels
+  described under "Levels".
+- `^` as another name for `**` (offered, not decided).
+- Saving readline history between sessions (left out on purpose for now).
