@@ -16,6 +16,11 @@ in `rpn.py`) in sync when commands change.
   or "most recent", never "top"/"bottom": x is *displayed* at the bottom, so
   "top" is ambiguous. "Older" is the other direction. In code comments and
   here, "top" (= `stack[-1]`) is fine.
+- **Levels**: beyond the names, entries are numbered 1-based from x (HP 48
+  "stack levels"): level *n* is `stack[-n]`, so x = 1, t = 4, oldest = 32.
+  Chosen over 0-based to follow HP prior art (e.g. RPL's `1 PICK` = copy x).
+  Any future random-access command (pick, roll, etc.) should use the same
+  numbering.
 - **Display**: `show()` prints the last `DISPLAY_ROWS` (4) entries, labeled
   from `REGISTERS` (`"tzyx"`), so x prints last: `x: ` then the value
   right-aligned in 20 columns (wider values just print wider).
@@ -46,6 +51,7 @@ in `rpn.py`) in sync when commands change.
 | `u` | Undo. Restores `stack[:] = history.pop()`. Handled before `saved` is taken, so `u` itself is never recorded (no redo). |
 | `@file` | `include()`: runs each line through `execute()`. See "Command files". Not itself recorded for undo; each command it runs is. |
 | `#...` | Comment, skipped at the prompt and in files. |
+| `stack` | `show_stack()`: all `STACK_SIZE` entries, oldest first, labeled by level (1 = x; see "Names"), with the `REGISTERS` letters for levels 1-4. Labels right-aligned to the width of `STACK_SIZE`. Like `h`: not recorded for undo, and `main()` doesn't call `show()` after it. |
 | `h` | Print `HELP`. Not recorded for undo. |
 | `q`, `quit`, EOF, Ctrl-C | Exit. |
 

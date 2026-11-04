@@ -28,6 +28,7 @@ number     Push onto the stack ($ and commas are ignored: $1,234.56)
 swap       Exchange x and y
 %          Percent: replace x with y * x / 100, keeping y
 r          Round x to the nearest cent
+stack      Show all 32 entries, numbered from x = 1 (as on an HP 48)
 d          Drop x
 c          Clear the whole stack
 u          Undo the last command (up to 1000 levels)
@@ -79,6 +80,15 @@ def fmt(value):
 def show():
     for name, value in zip(REGISTERS, stack[-DISPLAY_ROWS:]):
         print(f"{name}: {fmt(value).rjust(DISPLAY_WIDTH)}")
+
+
+def show_stack():
+    """All entries, oldest first. Level 1 is x (HP 48 numbering)."""
+    width = len(str(STACK_SIZE))
+    for level in range(STACK_SIZE, 0, -1):
+        name = REGISTERS[-level] if level <= DISPLAY_ROWS else str(level)
+        print(f"{name.rjust(width)}: "
+              f"{fmt(stack[-level]).rjust(DISPLAY_WIDTH)}")
 
 
 OPS = {
@@ -186,6 +196,9 @@ def execute(line, base_dir=".", depth=0):
     if cmd == "h":
         print(HELP)
         return
+    if cmd == "stack":
+        show_stack()
+        return
     if cmd.startswith("@"):
         include(cmd[1:].strip(), base_dir, depth)
         return
@@ -247,7 +260,7 @@ def main():
             if stack != before:  # an include failed partway
                 show()
             continue
-        if cmd and not cmd.startswith("#") and cmd != "h":
+        if cmd and not cmd.startswith("#") and cmd not in ("h", "stack"):
             show()
 
 

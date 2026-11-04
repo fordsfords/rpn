@@ -38,8 +38,28 @@ The rest of this document uses these names. Two-number operations work on
 *y* and *x* in that order, so `10 4 -` is *y* − *x* = 6, the same as writing
 10 − 4. When an operation uses up entries, the older ones shift down in the
 display to fill in: *z* becomes *y*, *t* becomes *z*, and so on. Unlike an
-HP, whose stack holds only these four, the stack is 32 entries deep, so
+HP-12C, whose stack holds only these four, the stack is 32 entries deep, so
 there are older entries beyond *t* that aren't shown.
+
+To see all of them, enter `stack`. Entries are numbered by how recent they
+are, starting with *x* as 1 (the HP 48's "stack levels"), so *y* is 2, *z*
+is 3, *t* is 4, and the oldest is 32. The four named entries show their
+names instead of numbers:
+
+```
+> stack
+32:                 0.00
+31:                 0.00
+...
+ 5:                 0.00
+ t:                 0.00
+ z:                 0.00
+ y:                 0.00
+ x:                 0.00
+```
+
+Like `h`, `stack` only displays; it doesn't change the stack or count as a
+command for undo.
 
 ## Commands
 
@@ -57,6 +77,7 @@ there are older entries beyond *t* that aren't shown.
 | `&`*f*[`:`*n*] | Same as `&`*mod.f*[`:`*n*] with *mod* = `Decimal`: call a `Decimal` method, e.g. `&sqrt`, `&ln`, `&log10`, `&exp`. |
 | `@`*file*    | Run the commands in *file*, then return to the prompt (see below). |
 | `#` ...      | Comment; ignored.                                             |
+| `stack`      | Show all 32 entries, numbered (see below).                    |
 | `h`          | Show a summary of the commands.                               |
 | `q`, Ctrl-D  | Quit.                                                         |
 

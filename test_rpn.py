@@ -271,6 +271,33 @@ class Commands(RpnTestCase):
     def test_help_does_not_change_stack(self):
         self.assertTop(run("1", "2", "h", "+"), "3.00")
 
+    def stack_listing(self, *lines):
+        """The lines printed by a final 'stack' command."""
+        result = run(*lines, "stack")
+        self.assertClean(result)
+        self.assertNotIn("Error", result.stdout + result.stderr)
+        out = [PROMPT_RE.sub("", line) for line in result.stdout.splitlines()]
+        start = next(i for i, line in enumerate(out) if line.startswith("32:"))
+        return out[start:start + 32]
+
+    def test_stack_lists_all_32_numbered_from_x(self):
+        listing = self.stack_listing(*[str(i) for i in range(1, 33)])
+        labels = [str(n) for n in range(32, 4, -1)] + ["t", "z", "y", "x"]
+        expected = [f"{label.rjust(2)}: " + f"{n}.00".rjust(20)
+                    for n, label in enumerate(labels, 1)]
+        self.assertEqual(listing, expected)
+
+    def test_stack_does_not_redisplay(self):
+        result = run("1", "stack")
+        self.assertEqual(len(display_lines(result.stdout)), 4)  # from "1"
+
+    def test_stack_does_not_change_stack(self):
+        self.assertTop(run("1", "2", "stack", "+"), "3.00")
+
+    def test_stack_not_recorded_for_undo(self):
+        self.assertStack(run("1", "2", "stack", "u"),
+                         ["0.00", "0.00", "0.00", "1.00"])
+
 
 # ---------------------------------------------------------------- quitting
 
