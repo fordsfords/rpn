@@ -29,6 +29,7 @@ The display shows the 4 most recent stack entries (x is most recent).
 
 number     Push onto the stack ($ and commas are ignored: $1,234.56)
 + - * /    Replace y and x with y op x
+**         Power: replace y and x with y to the power x
 swap       Exchange x and y
 %          Percent: replace x with y * x / 100, keeping y
 r          Round x to the nearest cent
@@ -100,6 +101,7 @@ OPS = {
     "-": lambda a, b: a - b,
     "*": lambda a, b: a * b,
     "/": lambda a, b: a / b,
+    "**": lambda a, b: a ** b,
 }
 
 
@@ -162,7 +164,11 @@ def call_function(cmd):
     except DecimalException as e:  # str() is an unhelpful class list
         raise CmdError(f"{name}: {type(e).__name__}")
     except Exception as e:  # any function, so any error
-        raise CmdError(f"{name}: {e or type(e).__name__}")
+        msg = str(e).strip() or type(e).__name__  # strip: some start with " "
+        if isinstance(e, TypeError) and "argument" in msg:
+            entries = "entry" if nargs == 1 else "entries"
+            msg += f" (passed {nargs} stack {entries}; use &{name}:n for n)"
+        raise CmdError(f"{name}: {msg}")
     return nargs, to_decimal(result, name)
 
 
@@ -217,9 +223,15 @@ def execute(line, base_dir=".", depth=0):
     if cmd in OPS:
         if cmd == "/" and stack[-1] == 0:
             raise CmdError("divide by zero")
-        b = pop()
-        a = pop()
-        push(OPS[cmd](a, b))
+        try:  # compute before popping, so an error leaves the stack alone
+            result = OPS[cmd](stack[-2], stack[-1])
+        except DecimalException as e:  # e.g. Overflow; 0 ** 0, (-8) ** 0.5
+            raise CmdError(f"{cmd}: {type(e).__name__}")
+        if not result.is_finite():  # 0 ** -1 gives Infinity, not an error
+            raise CmdError(f"{cmd}: result is not finite")
+        pop()
+        pop()
+        push(result)
     elif cmd == "swap":
         stack[-1], stack[-2] = stack[-2], stack[-1]
     elif cmd == "%":

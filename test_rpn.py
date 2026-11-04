@@ -212,6 +212,33 @@ class Arithmetic(RpnTestCase):
         self.assertStack(run("1", "6", "0", "/", "swap"),
                          ["0.00", "1.00", "0.00", "6.00"])
 
+    def test_power_is_y_to_the_x(self):
+        self.assertStack(run("1", "2", "10", "**"),
+                         ["0.00", "0.00", "1.00", "1,024.00"])
+
+    def test_power_fractional_and_negative(self):
+        self.assertTop(run("2", "0.5", "**", "1000000", "*"),
+                       "1,414,213.56")
+        self.assertTop(run("2", "-2", "**"), "0.25")
+        self.assertTop(run("-2", "3", "**"), "-8.00")
+
+    def test_power_compound_interest(self):
+        # $1000 at 5% for 10 years.
+        self.assertTop(run("1000", "1.05", "10", "**", "*"), "1,628.89")
+
+    def test_power_errors_leave_stack_unchanged(self):
+        for y, x, msg in [("0", "0", "InvalidOperation"),
+                          ("-8", "0.5", "InvalidOperation"),
+                          ("10", "1000000", "Overflow"),
+                          ("0", "-1", "not finite")]:
+            with self.subTest(y=y, x=x):
+                # Errors don't redisplay, so swap twice to show the stack.
+                result = run("1", y, x, "**", "swap", "swap")
+                self.assertError(result, msg)
+                self.assertClean(result)
+                self.assertEqual(self.last_display(result),
+                                 self.last_display(run("1", y, x)))
+
 
 # ---------------------------------------------------------------- commands
 
@@ -378,6 +405,7 @@ class Undo(RpnTestCase):
     def test_undo_each_command_type(self):
         cases = {
             "swap": ["1", "2", "swap"],
+            "**": ["2", "3", "**"],
             "%": ["1", "2", "%"],
             "r": ["1", "2.345", "r"],
             "d": ["1", "2", "d"],
@@ -614,6 +642,19 @@ class Functions(RpnTestCase):
 
     def test_wrong_argument_count(self):
         self.assertErrorUnchanged("1", "2", "&math.pow")
+
+    def test_wrong_argument_count_suggests_n(self):
+        # Dunder methods aren't documented but still work; CPython's message
+        # for them omits the name (" expected at least 1 argument"), so
+        # also check that the stray space is stripped.
+        for func in ["&math.pow", "&max", "&__pow__"]:
+            with self.subTest(func=func):
+                result = run("2014", "3", func)
+                self.assertError(result, f"(passed 1 stack entry; "
+                                         f"use {func}:n for n)")
+                error = next(line for line in result.stdout.splitlines()
+                             if "Error" in line)
+                self.assertNotIn(":  ", error)
 
     def test_unknown_module(self):
         self.assertErrorUnchanged("1", "2", "&nosuchmodule.f")

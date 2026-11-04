@@ -29,14 +29,15 @@ shell-style line editing and up-arrow history for the session, with your
 
 ### Stack names: x, y, z, t
 
-Following HP calculator convention, the four most recent entries have names:
+Following HP calculator convention, the four most recent entries have
+names. They're listed here in display order, oldest first:
 
-| Name | Entry                                                     |
-|------|-----------------------------------------------------------|
+| Name | Entry                                                       |
+|------|-------------------------------------------------------------|
+| *t*  | The one before *z*.                                         |
+| *z*  | The one before *y*.                                         |
+| *y*  | The one before *x*.                                         |
 | *x*  | The most recent: what you just entered, or the last result. |
-| *y*  | The one before *x*.                                       |
-| *z*  | The one before *y*.                                       |
-| *t*  | The one before *z*.                                       |
 
 The rest of this document uses these names. Two-number operations work on
 *y* and *x* in that order, so `10 4 -` is *y* − *x* = 6, the same as writing
@@ -71,6 +72,7 @@ command for undo.
 |--------------|---------------------------------------------------------------|
 | *number*     | Push onto the stack. Commas and a leading `$` are ignored (`$1,234.56`). |
 | `+ - * /`    | Replace *y* and *x* with the result (*y* op *x*).             |
+| `**`         | Power: replace *y* and *x* with *y*<sup>*x*</sup> (`yˣ` on an HP). |
 | `swap`       | Exchange *x* and *y* (`x≷y` on an HP).                        |
 | `%`          | Percent: replace *x* with *y* × *x* / 100, keeping *y*.       |
 | `r`          | Round *x* to the nearest cent.                                |
@@ -133,7 +135,8 @@ numbers works without being built in:
 - The result must be a finite number. Anything else (true/false, a tuple, a
   complex number, infinity) is an error, as is an error raised by the
   function (`&math.sqrt` of a negative number). Errors leave the stack
-  unchanged.
+  unchanged. A common one is forgetting `:`*n*: `&math.pow` passes only
+  *x*, so it fails with a hint to use `&math.pow:n`.
 
 ### Useful `Decimal` methods
 
@@ -142,9 +145,7 @@ log), `log10` (common log), `exp` (*e* to the *x*), `copy_abs` (absolute
 value), `copy_negate` (change sign), `to_integral_value` (round to a whole
 number), and `logb` (the power of ten of *x*, e.g. 3 for 1000).
 
-Two arguments (`&name:2`, *y* then *x*): `__pow__` (*y* to the *x*, at full
-precision, unlike `&math.pow:2`), `max` and `min`, `__mod__` (remainder of
-*y* ÷ *x*), `__floordiv__` (whole-number quotient of *y* ÷ *x*),
+Two arguments (`&name:2`, *y* then *x*): `max` and `min`,
 `remainder_near` (remainder, using the nearest whole quotient), `copy_sign`
 (*y* with the sign of *x*), `quantize` (round *y* to as many decimal places
 as *x* has: `1.2346 0.001 &quantize:2` gives 1.235), and `scaleb` (*y* × 10
@@ -155,9 +156,16 @@ step).
 
 Note that `to_integral_value` and `quantize` use banker's rounding (halves go
 to the even neighbor, so 2.5 becomes 2 and 3.5 becomes 4), unlike `r` and the
-display, which round halves up. `__mod__` and `__floordiv__` truncate toward
-zero rather than rounding down, so `7 -2 &__floordiv__:2` is −3, not −4, and
-the remainder takes the sign of *y*.
+display, which round halves up.
+
+### Operators as functions
+
+Python's `operator` module has a function for every operator, so operators
+the calculator doesn't build in are still available, at full precision:
+`&operator.mod:2` (remainder of *y* ÷ *x*) and `&operator.floordiv:2`
+(whole-number quotient of *y* ÷ *x*). With decimals, both truncate toward
+zero rather than rounding down, so `7 -2 &operator.floordiv:2` is −3, not
+−4, and the remainder takes the sign of *y*. (For *y* to the *x*, use `**`.)
 
 ## Command files
 

@@ -45,7 +45,7 @@ in `rpn.py`) in sync when commands change.
 
 | Input | Implementation notes |
 |-------|----------------------|
-| `+ - * /` | In the `OPS` dict as `f(a, b)` with `a` = y, `b` = x. Pops both, pushes result. |
+| `+ - * / **` | In the `OPS` dict as `f(a, b)` with `a` = y, `b` = x. Computed from `stack[-2]`, `stack[-1]` *before* popping; `DecimalException` (e.g. `Overflow`, `0 ** 0`, `(-8) ** 0.5`) and non-finite results (`0 ** -1` gives `Infinity` without raising) become `CmdError`. Then pops both, pushes result. |
 | `swap` | Swap x and y (`stack[-1]`, `stack[-2]`). Was `x`; renamed to avoid clashing with the register name. |
 | `%` | HP-12C style: `x = y * x / 100`, y is **kept** (so `+`/`-` then do markup/discount). |
 | `r` | `round_cents()`: quantize x to cents, `ROUND_HALF_UP` (matches display rounding). |
@@ -68,7 +68,8 @@ prompt, prints `Error: <msg>`, and calls `show()` after each successful line.
 Error handling: a failing command raises *before* modifying the stack, so the
 stack is unchanged. `main()` doesn't redisplay after an error unless the stack
 changed, which only happens when an include fails partway. Divide-by-zero is
-checked before popping.
+checked explicitly (for a clearer message); other `OPS` errors are caught
+from the computation, which runs before popping.
 
 ## Functions
 
@@ -83,7 +84,10 @@ a list of known names:
 - `n` defaults to 1, may be 0, max `STACK_SIZE`. Arguments are
   `stack[len(stack) - n:]` (not `stack[-n:]`, which is wrong for 0), so y
   comes before x. They're read before popping; any exception from the call
-  becomes a `CmdError`, so the stack is untouched on failure.
+  becomes a `CmdError`, so the stack is untouched on failure. A `TypeError`
+  mentioning "argument" gets a hint to use `:n` (forgetting it is the usual
+  mistake). The message is stripped because CPython's for Decimal methods
+  omits the name and starts with a space.
 - `to_decimal()` accepts `int`, `float` (via `repr` → shortest decimal) and
   `Decimal` results, and only finite ones. `bool` (an int subclass), tuples,
   complex, `None`, etc. are errors.
