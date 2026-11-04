@@ -26,6 +26,8 @@ CENT = Decimal("0.01")
 
 HELP = """\
 The display shows the 4 most recent stack entries (x is most recent).
+A line can hold several commands separated by spaces, e.g. 1 3 +. If one
+fails, the whole line is undone.
 
 number     Push onto the stack ($ and commas are ignored: $1,234.56)
 + - * /    Replace y and x with y op x
@@ -36,12 +38,12 @@ r          Round x to the nearest cent
 stack      Show all 32 entries, numbered from x = 1 (as on an HP 48)
 d          Drop x
 c          Clear the whole stack
-u          Undo the last command (up to 1000 levels)
+u          Undo the last line (up to 1000 levels); must be alone on its line
 &mod.f[:n] Call Python funct mod.f on the n most recent stack entries [deflt 1]
            For n>1, x is passed last. E.g. &math.pow:2 calls math.pow(y, x)
 &f[:n]     Same as &mod.f[:n] with mod=Decimal. E.g. &sqrt, &ln, &log10, &exp
-@file      Run the commands in file
-# ...      Comment; ignored
+@file      Run the commands in file (the rest of the line is the name)
+# ...      Comment: ignored to the end of the line
 h          Show this help
 q, Ctrl-D  Quit
 
@@ -52,7 +54,7 @@ history = []
 
 
 class CmdError(Exception):
-    """A command failed. Raised before the stack is modified."""
+    """A command failed. Raised before that command modifies the stack."""
 
 
 class Quit(Exception):
@@ -173,7 +175,8 @@ def call_function(cmd):
 
 
 def include(name, base_dir, depth):
-    """Run each line of a command file through execute()."""
+    """Run each line of a command file through execute(). Errors are
+    prefixed with the file and line; main() rolls back the stack."""
     if depth >= MAX_INCLUDE_DEPTH:
         raise CmdError(f"{name}: includes nested more than "
                        f"{MAX_INCLUDE_DEPTH} deep")
@@ -196,31 +199,44 @@ def include(name, base_dir, depth):
             raise located from None
 
 
+def split_line(line):
+    """The commands on a line, split on whitespace. A word starting with #
+    ends the line. A word starting with @ takes the rest of the line, spaces
+    and all, as the file name."""
+    words = []
+    for m in re.finditer(r"\S+", line):
+        if m.group().startswith("#"):
+            break
+        if m.group().startswith("@"):
+            words.append(line[m.start():].rstrip())
+            break
+        words.append(m.group())
+    return words
+
+
 def execute(line, base_dir=".", depth=0):
-    """Run one command. Raises CmdError on failure, Quit for q/quit."""
-    cmd = line.strip()
-    if not cmd or cmd.startswith("#"):
-        return
+    """Run the commands on a line, in order. On the first failure, raises
+    CmdError, leaving earlier commands done (main() rolls back), or Quit."""
+    for cmd in split_line(line):
+        execute_one(cmd, base_dir, depth)
+
+
+def execute_one(cmd, base_dir, depth):
+    """Run one command. Raises CmdError (before touching the stack) or Quit."""
     if cmd in ("q", "quit"):
         raise Quit
     if cmd == "h":
         print(HELP)
-        return
-    if cmd == "stack":
+    elif cmd == "stack":
         show_stack()
-        return
-    if cmd.startswith("@"):
-        include(cmd[1:].strip(), base_dir, depth)
-        return
-    if cmd == "u":
-        if not history:
-            raise CmdError("nothing to undo")
-        stack[:] = history.pop()
-        return
-
-    saved = stack[:]
-
-    if cmd in OPS:
+    elif cmd == "u":
+        raise CmdError("u must be on a line by itself")
+    elif cmd.startswith("@"):
+        name = cmd[1:].strip()  # "@ file" works too
+        if not name:
+            raise CmdError("@: missing file name")
+        include(name, base_dir, depth)
+    elif cmd in OPS:
         if cmd == "/" and stack[-1] == 0:
             raise CmdError("divide by zero")
         try:  # compute before popping, so an error leaves the stack alone
@@ -253,31 +269,42 @@ def execute(line, base_dir=".", depth=0):
             raise CmdError(f"unrecognized input: {cmd} (enter 'h' for help)")
         push(value)
 
-    history.append(saved)
-    if len(history) > UNDO_LEVELS:
-        del history[0]
+
+def undo():
+    if not history:
+        raise CmdError("nothing to undo")
+    stack[:] = history.pop()
 
 
 def main():
+    """Each input line is all-or-nothing: an error anywhere in it (including
+    in a command file it runs) restores the stack, and u undoes it whole."""
     while True:
         try:
             line = input("> ")
         except (EOFError, KeyboardInterrupt):
             print()
             return
-        cmd = line.strip()
-        before = stack[:]
+        words = split_line(line)
+        saved = stack[:]  # Decimals are immutable, so a shallow copy is safe
         try:
-            execute(line)
+            if words == ["u"]:
+                undo()
+            else:
+                execute(line)
         except Quit:
             return
         except CmdError as e:
+            stack[:] = saved
             print(f"Error: {e}")
-            if stack != before:  # an include failed partway
-                show()
             continue
-        if cmd and not cmd.startswith("#") and cmd not in ("h", "stack"):
-            show()
+        if all(word in ("h", "stack") for word in words):
+            continue  # nothing that changes the stack: not recorded or shown
+        if words != ["u"]:  # u itself is not recorded (no redo)
+            history.append(saved)
+            if len(history) > UNDO_LEVELS:
+                del history[0]
+        show()
 
 
 if __name__ == "__main__":

@@ -52,24 +52,39 @@ in `rpn.py`) in sync when commands change.
 | `&mod.f[:n]`, `&f[:n]` | `call_function()`. See "Functions". |
 | `d` | `pop()`. |
 | `c` | Reset all entries to 0. |
-| `u` | Undo. Restores `stack[:] = history.pop()`. Handled before `saved` is taken, so `u` itself is never recorded (no redo). |
-| `@file` | `include()`: runs each line through `execute()`. See "Command files". Not itself recorded for undo; each command it runs is. |
-| `#...` | Comment, skipped at the prompt and in files. |
-| `stack` | `show_stack()`: all `STACK_SIZE` entries, oldest first, labeled by level (1 = x; see "Names"), with the `REGISTERS` letters for levels 1-4. Labels right-aligned to the width of `STACK_SIZE`. Like `h`: not recorded for undo, and `main()` doesn't call `show()` after it. |
-| `h` | Print `HELP`. Not recorded for undo. |
+| `u` | `undo()`: `stack[:] = history.pop()`. Only accepted as the only word on a prompt line, handled by `main()`; anywhere else (with other words, or in a file) `execute_one()` raises `CmdError`. Never recorded (no redo). |
+| `@file` | `include()`: runs each line through `execute()`. See "Command files". A word starting with `@` takes the rest of the line (`split_line()`), internal spaces kept, ends stripped, `#` not special. `@ file` works; bare `@` is an error. |
+| `#...` | A word starting with `#` ends the line (`split_line()`); `1#2` is not a comment. |
+| `stack` | `show_stack()`: all `STACK_SIZE` entries, oldest first, labeled by level (1 = x; see "Names"), with the `REGISTERS` letters for levels 1-4. Labels right-aligned to the width of `STACK_SIZE`. Like `h`: a line of only `h`/`stack` is not recorded for undo or followed by `show()`. |
+| `h` | Print `HELP`. |
 | `q`, `quit`, EOF, Ctrl-C | Exit. |
 
 A `q` inside a command file raises `Quit` and exits the program.
 
-Structure: `execute(line, base_dir, depth)` runs one command and raises
-`CmdError(msg)` on failure or `Quit` for `q`/`quit`. `main()` handles the
-prompt, prints `Error: <msg>`, and calls `show()` after each successful line.
+Structure:
+- `split_line(line)` splits on whitespace (via `re.finditer`, to keep
+  positions), stops at a word starting with `#`, and makes a word starting
+  with `@` plus the rest of the line one word.
+- `execute(line, base_dir, depth)` runs each word through
+  `execute_one(cmd, base_dir, depth)`, stopping at the first `CmdError`
+  (earlier words stay done; `main()` rolls back). `Quit` for `q`/`quit`.
+- `main()` handles the prompt and owns rollback and undo (see "Lines").
 
-Error handling: a failing command raises *before* modifying the stack, so the
-stack is unchanged. `main()` doesn't redisplay after an error unless the stack
-changed, which only happens when an include fails partway. Divide-by-zero is
-checked explicitly (for a clearer message); other `OPS` errors are caught
-from the computation, which runs before popping.
+Error handling: a failing command raises *before* modifying the stack.
+Divide-by-zero is checked explicitly (for a clearer message); other `OPS`
+errors are caught from the computation, which runs before popping.
+
+## Lines
+
+The unit of rollback and undo is one line read by `main()` (a prompt line, or
+a stdin line when piped; no difference). `main()` takes `saved = stack[:]`
+before the line. On `CmdError` it restores `stack[:] = saved`, prints
+`Error: <msg>`, and doesn't redisplay (the stack is as it was). This covers
+earlier words on the line and everything run by nested includes. On success
+it appends `saved` to `history` and calls `show()` once, unless the line was
+only `h`/`stack` (or blank/comment). `history` changes only after a line
+succeeds, so rollback never needs to touch it; that's also why `u` must be
+alone on its line.
 
 ## Functions
 
@@ -110,24 +125,23 @@ a list of known names:
 - On the first error, `include()` re-raises `CmdError` prefixed with
   `path:lineno:`. Only the innermost location is added (the `located`
   attribute), so the message names the line that actually failed. The error
-  aborts the whole include chain. Commands that already ran are not rolled back.
+  aborts the whole include chain, and `main()` rolls the stack back to before
+  the prompt line (see "Lines").
 - No display during a file. `main()` shows the stack once at the end.
 
 ## Undo
 
-Snapshot-based: `execute()` takes `saved = stack[:]` before each command and
-appends it to `history` only after the command succeeds (errors `raise`
-before the append). Decimals are immutable, so the shallow copy is safe.
-`history` is capped at `UNDO_LEVELS` (1000), oldest dropped. New commands get
-undo for free as long as they fall through to the end of `execute()`; a command
-that should *not* be undoable (like `u`) must `return` before `saved`.
+Snapshot-based, per line (see "Lines"). Decimals are immutable, so the
+shallow copy is safe. `history` is capped at `UNDO_LEVELS` (1000), oldest
+dropped. New commands get undo and rollback for free.
 
 ## Adding a command
 
 - Binary op that consumes x and y: add it to `OPS`.
-- Anything else: add an `elif` branch in `execute()`, before the final
+- Anything else: add an `elif` branch in `execute_one()`, before the final
   `else` (which handles number parsing). Report failures with
   `raise CmdError(msg)` before touching the stack.
+- Command names can't contain whitespace or start with `#`.
 - Check that the new command name can't also parse as a `Decimal`.
   `Decimal` accepts `inf`, `nan`, `e` notation, etc., but command branches
   are checked first, so a command name wins.

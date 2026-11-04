@@ -2,90 +2,78 @@
 
 A small command-line RPN (Reverse Polish Notation) calculator for currency math.
 
+Usage:
 ```
-python3 rpn.py
+python3 rpn.py  # or ./rpn.py
 ```
 
-## How it works
+## Introduction
 
-Type a number or a command and press Enter. After each entry the calculator
-shows the four most recent stack entries, with the **most recent printed
-last**, just above the prompt:
+If you're not already familiar with RPN, you probably don't want this
+calculator. :-) Or you could get an HP calculator and
+[learn how to use it](https://www.hpmuseum.org/forum/attachment.php?aid=4956).
+Either way, this README is not intended to teach you RPN, but here's a very
+brief introduction.
 
+Enter `2 5` at the `>` prompt.
+This first pushes 2 onto the stack in the *x* position. Then it pushes 5 onto
+the stack in *x*, and the 2 gets pushed into *y*. You should see this:
 ```
-> 1
+t:                 0.00
+z:                 0.00
+y:                 2.00
+x:                 5.00
+>
+```
+The four most-recent entries are displayed.
+
+Now enter an operation, say `+`.
+The values in *y* and *x* are added, leaving the answer in *x*:
+```
 t:                 0.00
 z:                 0.00
 y:                 0.00
-x:                 1.00
+x:                 7.00
+>
 ```
 
-The stack holds 32 entries and starts out filled with zeros. It is always
-full, so entering a number discards the oldest entry.
+You could have entered all three on a single line: `2 5 +`.
 
-Where Python has `readline` (Linux, macOS), the prompt supports the usual
-shell-style line editing and up-arrow history for the session, with your
-`~/.inputrc` settings (e.g. `set editing-mode vi`).
+NOTE: Where Python has `readline` (Linux, macOS), the prompt supports the
+usual shell-style line editing and up-arrow history for the session, with
+your `~/.inputrc` settings (e.g. `set editing-mode vi`).
 
-### Stack names: x, y, z, t
+### The Stack
 
-Following HP calculator convention, the four most recent entries have
-names. They're listed here in display order, oldest first:
-
-| Name | Entry                                                       |
-|------|-------------------------------------------------------------|
-| *t*  | The one before *z*.                                         |
-| *z*  | The one before *y*.                                         |
-| *y*  | The one before *x*.                                         |
-| *x*  | The most recent: what you just entered, or the last result. |
-
-The rest of this document uses these names. Two-number operations work on
-*y* and *x* in that order, so `10 4 -` is *y* − *x* = 6, the same as writing
-10 − 4. When an operation uses up entries, the older ones shift down in the
-display to fill in: *z* becomes *y*, *t* becomes *z*, and so on. Unlike an
-HP-12C, whose stack holds only these four, the stack is 32 entries deep, so
-there are older entries beyond *t* that aren't shown.
-
-To see all of them, enter `stack`. Entries are numbered by how recent they
-are, starting with *x* as 1 (the HP 48's "stack levels"), so *y* is 2, *z*
-is 3, *t* is 4, and the oldest is 32. The four named entries show their
-names instead of numbers:
-
-```
-> stack
-32:                 0.00
-31:                 0.00
-...
- 5:                 0.00
- t:                 0.00
- z:                 0.00
- y:                 0.00
- x:                 0.00
-```
-
-Like `h`, `stack` only displays; it doesn't change the stack or count as a
-command for undo.
+Following HP calculator convention, the four most recent entries have the names
+*x*, *y*, *z*, and *t*. This calculator also has 28 more stack entries, normally not
+displayed, for a total of 32 stack entries. The `stack` command shows all 32.
+Note that *x*, *y*, *z*, and *t* are implicitly numbered 1-4 respectively.
 
 ## Commands
 
+A line can hold several commands separated by spaces. The stack is shown
+once, after the whole line. A line is all-or-nothing: if any command on it
+fails, the stack goes back to how it was before the line.
+
 | Input        | Action                                                        |
 |--------------|---------------------------------------------------------------|
+| `h`          | Show a summary of the commands.                               |
+| `q`, Ctrl-D  | Quit.                                                         |
 | *number*     | Push onto the stack. Commas and a leading `$` are ignored (`$1,234.56`). |
 | `+ - * /`    | Replace *y* and *x* with the result (*y* op *x*).             |
 | `**`         | Power: replace *y* and *x* with *y*<sup>*x*</sup> (`yˣ` on an HP). |
-| `swap`       | Exchange *x* and *y* (`x≷y` on an HP).                        |
-| `%`          | Percent: replace *x* with *y* × *x* / 100, keeping *y*.       |
+| `%`          | Percent (*y* stays intact!). [See below](#percent).           |
 | `r`          | Round *x* to the nearest cent.                                |
-| `d`          | Drop *x*.                                                     |
+| `stack`      | Show all 32 entries, numbered. [See above](#the-stack).       |
+| `swap`       | Exchange *x* and *y* (`x≷y` on an HP).                        |
+| `d`          | Drop the stack, with *x* discarded.                           |
 | `c`          | Clear the whole stack.                                        |
-| `u`          | Undo the last command (repeatable, up to 1000 levels).        |
-| `&`*mod.f*[`:`*n*] | Call a Python function on the *n* most recent entries (default 1, just *x*), e.g. `&math.log`, `&math.pow:2` (see below). |
+| `u`          | Undo the last line. Must be alone on its line. [See below](#undo). |
+| `&`*mod.f*[`:`*n*] | Call a Python function on the *n* most recent entries (default 1, just *x*), e.g. `&math.log`, `&math.pow:2`. [See below](#functions). |
 | `&`*f*[`:`*n*] | Same as `&`*mod.f*[`:`*n*] with *mod* = `Decimal`: call a `Decimal` method, e.g. `&sqrt`, `&ln`, `&log10`, `&exp`. |
-| `@`*file*    | Run the commands in *file*, then return to the prompt (see below). |
-| `#` ...      | Comment; ignored.                                             |
-| `stack`      | Show all 32 entries, numbered (see below).                    |
-| `h`          | Show a summary of the commands.                               |
-| `q`, Ctrl-D  | Quit.                                                         |
+| `@`*file*    | Run the commands in *file*; the rest of the line is the file name. [See below](#command-files). |
+| `#` ...      | Comment; the rest of the line is ignored (`100 1.08 * # tax`). |
 
 ## Currency mode
 
@@ -98,10 +86,38 @@ stack keeps full precision, like a financial calculator. So
 itself rounded to cents, e.g. for an amount that will actually be paid:
 `10 3 / r 3 *` shows `9.99`.
 
-## Percent examples
+## Undo
 
-`%` leaves the base amount on the stack, so markups and discounts take one
-more keystroke:
+The undo command (`u`) is scoped to the `>` prompt. Note that `u` must be on
+its own line, not part of a multi-command line. For example:
+```
+> 2 3
+t:                 0.00
+z:                 0.00
+y:                 2.00
+x:                 3.00
+> + 1 -
+t:                 0.00
+z:                 0.00
+y:                 0.00
+x:                 4.00
+> u
+t:                 0.00
+z:                 0.00
+y:                 2.00
+x:                 3.00
+```
+The `u` command undid the whole `+ 1 -` sequence, returning the stack to what
+it was before you entered it. `u` can be repeated to go back further, up to
+1000 lines. There is no redo.
+
+Similarly, a `u` command after a `@file` command will return the stack to what
+it was before the `@file` command, no matter how many operations it performed.
+
+## Percent
+
+`%` leaves the base amount on the stack, so markups and discounts take
+only one more keystroke:
 
 | Keys              | Result   |
 |-------------------|----------|
@@ -151,7 +167,7 @@ Two arguments (`&name:2`, *y* then *x*): `max` and `min`,
 as *x* has: `1.2346 0.001 &quantize:2` gives 1.235), and `scaleb` (*y* × 10
 to the *x*).
 
-Three arguments: `fma` (`a b c &fma:3` gives *a* × *b* + *c* in one exact
+Three arguments: `fma` (`a b c &fma:3` gives *a* * *b* + *c* in one exact
 step).
 
 Note that `to_integral_value` and `quantize` use banker's rounding (halves go
@@ -169,9 +185,9 @@ zero rather than rounding down, so `7 -2 &operator.floordiv:2` is −3, not
 
 ## Command files
 
-`@file` reads *file* and runs each line as if you had typed it. The stack is
-displayed once, when the file is done. Blank lines and lines starting with `#`
-are ignored, so a file can document itself:
+`@file` reads *file* and runs each line in turn. The stack is
+displayed once, when the file is done. Blank lines and comments are ignored,
+so a file can document itself:
 
 ```
 # markup.rpn: add 15% to x
@@ -185,17 +201,23 @@ are ignored, so a file can document itself:
 > @markup.rpn        (shows 230.00)
 ```
 
+`@file` can come after other commands on a line: `200 @markup.rpn` does the
+same thing. The file name is the rest of the line, so it can contain spaces
+(`@my taxes.rpn`), and nothing can follow it, not even a comment.
+
 Files can include other files. A relative path inside a file is relative to
 that file's directory; at the prompt it is relative to the current directory.
 `~` is expanded.
 
 If a line in a file fails, the error shows the file and line number
-(`markup.rpn:3: divide by zero`) and the rest of the file (and of any file
-that included it) is skipped. Commands that already ran stay done; each can be
-undone with `u` one at a time. A `q` in a file quits the calculator.
+(`markup.rpn:3: divide by zero`), the rest of the file (and of any file that
+included it) is skipped, and the stack goes back to how it was before the line
+you typed. On success, a single `u` undoes everything the file did. `u` can't
+be used in a file. A `q` in a file quits the calculator.
 
 ## Errors
 
 Dividing by zero, typing something unrecognized (including `inf` and
-`nan`), or a failing `&` function prints an error and leaves
-the stack unchanged (except for a command file that fails partway; see above). A failed entry is not recorded, so `u` skips it.
+`nan`), or a failing `&` function prints an error and leaves the stack as it
+was before the line (including any earlier commands on the line, and any
+command file the line ran). A failed line is not recorded, so `u` skips it.

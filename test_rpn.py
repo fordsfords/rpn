@@ -449,6 +449,71 @@ class Undo(RpnTestCase):
         self.assertStack(result, ["0.00", "0.00", "0.00", "1.00"])
 
 
+# ---------------------------------------------------------------- lines
+
+class MultipleCommandsPerLine(RpnTestCase):
+    def test_space_separated(self):
+        self.assertTop(run("1 3 +"), "4.00")
+
+    def test_tabs_and_extra_spaces(self):
+        self.assertTop(run("  1\t 3   +  "), "4.00")
+
+    def test_displayed_once_per_line(self):
+        result = run("1 2 3 +")
+        self.assertEqual(len(display_lines(result.stdout)), 4)
+        self.assertStack(result, ["0.00", "0.00", "1.00", "5.00"])
+
+    def test_trailing_comment(self):
+        result = run("100 1.08 * # with tax")
+        self.assertNotIn("Error", result.stdout)
+        self.assertTop(result, "108.00")
+
+    def test_hash_inside_word_is_not_a_comment(self):
+        self.assertError(run("1#2"), "unrecognized input: 1#2")
+
+    def test_comment_only_line_not_displayed(self):
+        result = run("   # just a note")
+        self.assertEqual(display_lines(result.stdout), [])
+
+    def test_error_rolls_back_whole_line(self):
+        result = run("1", "5 8 foobar", "swap", "swap")
+        self.assertError(result, "unrecognized input: foobar")
+        self.assertStack(result, ["0.00", "0.00", "0.00", "1.00"])
+
+    def test_error_line_does_not_redisplay(self):
+        result = run("5 8 foobar")
+        self.assertError(result)
+        self.assertEqual(display_lines(result.stdout), [])
+
+    def test_error_line_not_recorded(self):
+        result = run("1", "2", "5 0 /", "u")
+        self.assertStack(result, ["0.00", "0.00", "0.00", "1.00"])
+
+    def test_undo_whole_line(self):
+        result = run("7", "1 3 +", "u")
+        self.assertStack(result, ["0.00", "0.00", "0.00", "7.00"])
+
+    def test_u_with_other_commands_is_error(self):
+        result = run("7", "1 u", "swap", "swap")
+        self.assertError(result, "u must be on a line by itself")
+        self.assertStack(result, ["0.00", "0.00", "0.00", "7.00"])
+
+    def test_q_mid_line_quits(self):
+        result = run("1 q 2", "3")
+        self.assertClean(result)
+        self.assertEqual(display_lines(result.stdout), [])
+
+    def test_help_and_stack_only_not_displayed(self):
+        result = run("1", "h stack")
+        self.assertIn("32:", result.stdout)  # the stack listing ran
+        # Only the display after "1" (stack rows have padded labels).
+        self.assertEqual(len(display_lines(result.stdout)), 4)
+
+    def test_help_with_push_is_displayed_and_recorded(self):
+        result = run("1", "h 2", "u")
+        self.assertStack(result, ["0.00", "0.00", "0.00", "1.00"])
+
+
 # ---------------------------------------------------------------- @file
 
 class Include(RpnTestCase):
@@ -536,23 +601,60 @@ class Include(RpnTestCase):
         self.assertIn("inner.rpn:2:", output)
         self.assertNotIn("outer.rpn:2:", output)
 
-    def test_error_aborts_whole_chain_without_rollback(self):
+    def test_error_aborts_whole_chain_and_rolls_back(self):
         write(self.path("outer.rpn"), "1", "@inner.rpn", "5")
         write(self.path("inner.rpn"), "2", "0", "/", "3")
-        result = self.run_here("@outer.rpn")
-        self.assertError(result)
-        # 1, 2, 0 stay pushed; neither 3 nor 5 ran. Stack changed, so the
-        # display is shown even though there was an error.
-        self.assertStack(result, ["0.00", "1.00", "2.00", "0.00"])
+        result = self.run_here("7", "@outer.rpn", "swap", "swap")
+        self.assertError(result, "inner.rpn:3: divide by zero")
+        # Back to the stack before the @ line; nothing from either file.
+        self.assertStack(result, ["0.00", "0.00", "0.00", "7.00"])
 
-    def test_each_included_command_undoable(self):
+    def test_error_in_include_not_recorded(self):
+        write(self.path("bad.rpn"), "1", "bogus")
+        result = self.run_here("7", "8", "@bad.rpn", "u")
+        self.assertStack(result, ["0.00", "0.00", "0.00", "7.00"])
+
+    def test_include_undone_as_one(self):
         write(self.path("markup.rpn"), "15", "%", "+")
         result = self.run_here("200", "@markup.rpn", "u")
-        self.assertStack(result, ["0.00", "0.00", "200.00", "30.00"])
-        result = self.run_here("200", "@markup.rpn", "u", "u")
-        self.assertStack(result, ["0.00", "0.00", "200.00", "15.00"])
-        result = self.run_here("200", "@markup.rpn", "u", "u", "u")
         self.assertStack(result, ["0.00", "0.00", "0.00", "200.00"])
+
+    def test_include_after_other_commands(self):
+        write(self.path("markup.rpn"), "15", "%", "+")
+        self.assertTop(self.run_here("200 @markup.rpn"), "230.00")
+
+    def test_name_is_rest_of_line(self):
+        write(self.path("foo.rpn 3"), "7")
+        write(self.path("foo.rpn"), "99")  # decoy: must not be used
+        self.assertTop(self.run_here("1 @foo.rpn 3"), "7.00")
+
+    def test_name_keeps_inner_spaces(self):
+        write(self.path("my  file.rpn"), "7")
+        self.assertTop(self.run_here("@my  file.rpn  "), "7.00")
+
+    def test_space_after_at_ignored(self):
+        write(self.path("f.rpn"), "7")
+        self.assertTop(self.run_here("@ f.rpn"), "7.00")
+
+    def test_hash_after_at_is_part_of_name(self):
+        write(self.path("f.rpn"), "7")
+        result = self.run_here("@f.rpn # note")
+        self.assertError(result, "f.rpn # note")
+
+    def test_file_lines_can_hold_several_commands(self):
+        write(self.path("f.rpn"), "1 2 + # three", "4 *")
+        self.assertTop(self.run_here("@f.rpn"), "12.00")
+
+    def test_bare_at_is_error(self):
+        result = self.run_here("1", "@")
+        self.assertError(result, "missing file name")
+        self.assertClean(result)
+
+    def test_u_in_file_is_error(self):
+        write(self.path("f.rpn"), "1", "u")
+        result = self.run_here("7", "@f.rpn", "swap", "swap")
+        self.assertError(result, "f.rpn:2: u must be on a line by itself")
+        self.assertStack(result, ["0.00", "0.00", "0.00", "7.00"])
 
     def test_q_in_file_quits(self):
         write(self.path("f.rpn"), "5", "q", "6")
