@@ -7,12 +7,18 @@ in `rpn.py`) in sync when commands change.
 ## Design
 
 - **Stack**: module-level list `stack` of exactly `STACK_SIZE` (32) `Decimal`s.
-  `stack[-1]` is the top (x), `stack[-2]` is y. The length never changes:
+  The length never changes:
   - `push(v)` drops `stack[0]` (bottom) and appends.
   - `pop()` removes the top and inserts `Decimal(0)` at the bottom.
-- **Display**: `show()` prints the last `DISPLAY_ROWS` (4) entries, so the top
-  of the stack prints last. Right-aligned in 20 columns (wider values just
-  print wider).
+- **Names**: HP convention, used everywhere (code comments, `HELP`, docs):
+  x = `stack[-1]` (top), y = `stack[-2]`, z = `stack[-3]`, t = `stack[-4]`.
+  Two-number ops are y op x. In user-facing text (`HELP`, README) say "x"
+  or "most recent", never "top"/"bottom": x is *displayed* at the bottom, so
+  "top" is ambiguous. "Older" is the other direction. In code comments and
+  here, "top" (= `stack[-1]`) is fine.
+- **Display**: `show()` prints the last `DISPLAY_ROWS` (4) entries, labeled
+  from `REGISTERS` (`"tzyx"`), so x prints last: `x: ` then the value
+  right-aligned in 20 columns (wider values just print wider).
 - **Currency mode** (currently the only mode):
   - All values are `decimal.Decimal`, context precision 34. Never use float
     (the one exception: `&module.func` results, see "Functions").
@@ -31,7 +37,7 @@ in `rpn.py`) in sync when commands change.
 | Input | Implementation notes |
 |-------|----------------------|
 | `+ - * /` | In the `OPS` dict as `f(a, b)` with `a` = y, `b` = x. Pops both, pushes result. |
-| `x` | Swap `stack[-1]` and `stack[-2]`. |
+| `swap` | Swap x and y (`stack[-1]`, `stack[-2]`). Was `x`; renamed to avoid clashing with the register name. |
 | `%` | HP-12C style: `x = y * x / 100`, y is **kept** (so `+`/`-` then do markup/discount). |
 | `r` | `round_cents()`: quantize x to cents, `ROUND_HALF_UP` (matches display rounding). |
 | `&mod.f[:n]`, `&f[:n]` | `call_function()`. See "Functions". |

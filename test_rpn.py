@@ -22,8 +22,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RPN = os.path.join(HERE, "rpn.py")
 TIMEOUT = 10  # seconds per run; guards against hangs (e.g. infinite include)
 
-# A display line: a currency value right-aligned in 20 columns.
-VALUE_RE = re.compile(r"^ *-?\d{1,3}(?:,\d{3})*\.\d\d$")
+# A display line: a register label (t, z, y, x), then a currency value
+# right-aligned in 20 columns: "x:             1,234.50".
+DISPLAY_RE = re.compile(r"^[tzyx]: ( *-?\d{1,3}(?:,\d{3})*\.\d\d)$")
 PROMPT_RE = re.compile(r"^(?:> ?)+")
 
 
@@ -44,7 +45,7 @@ def run(*lines, cwd=None, env=None):
 def display_lines(out):
     """All stack-display lines in the output, with any '> ' prompts removed."""
     lines = (PROMPT_RE.sub("", line) for line in out.splitlines())
-    return [line for line in lines if VALUE_RE.match(line)]
+    return [line for line in lines if DISPLAY_RE.match(line)]
 
 
 def write(path, *lines):
@@ -61,7 +62,8 @@ class RpnTestCase(unittest.TestCase):
             len(lines), 4,
             f"expected a 4-row stack display\nstdout:\n{result.stdout}\n"
             f"stderr:\n{result.stderr}")
-        return [line.strip() for line in lines[-4:]]
+        return [DISPLAY_RE.match(line).group(1).strip()
+                for line in lines[-4:]]
 
     def assertStack(self, result, expected):
         self.assertEqual(self.last_display(result), expected)
@@ -88,13 +90,20 @@ class Display(RpnTestCase):
         self.assertStack(run("1", "2", "3", "4", "5"),
                          ["2.00", "3.00", "4.00", "5.00"])
 
+    def test_rows_labeled_t_z_y_x(self):
+        lines = display_lines(run("1", "2", "3", "4").stdout)[-4:]
+        self.assertEqual(lines, ["t:" + "1.00".rjust(21),
+                                 "z:" + "2.00".rjust(21),
+                                 "y:" + "3.00".rjust(21),
+                                 "x:" + "4.00".rjust(21)])
+
     def test_rows_right_aligned_in_20_columns(self):
         result = run("1234.5")
         lines = display_lines(result.stdout)[-4:]
         self.assertEqual(len(lines), 4)
         for line in lines:
-            self.assertEqual(len(line), 20, repr(line))
-        self.assertEqual(lines[-1], "1,234.50".rjust(20))
+            self.assertEqual(len(line), len("x: ") + 20, repr(line))
+        self.assertEqual(lines[-1], "x: " + "1,234.50".rjust(20))
 
     def test_display_after_each_entry(self):
         self.assertEqual(len(display_lines(run("1", "2", "3").stdout)), 12)
@@ -135,6 +144,11 @@ class Input(RpnTestCase):
         result = run("1", "bogus")
         self.assertError(result)
         self.assertClean(result)
+
+    def test_unrecognized_input_suggests_help(self):
+        result = run("bogus")
+        self.assertError(result, "unrecognized input: bogus")
+        self.assertError(result, "enter 'h' for help")
 
 
 # ---------------------------------------------------------------- stack
@@ -195,7 +209,7 @@ class Arithmetic(RpnTestCase):
 
     def test_divide_by_zero_leaves_stack_unchanged(self):
         # If "/" had popped anything, the swap would show something else.
-        self.assertStack(run("1", "6", "0", "/", "x"),
+        self.assertStack(run("1", "6", "0", "/", "swap"),
                          ["0.00", "1.00", "0.00", "6.00"])
 
 
@@ -203,7 +217,13 @@ class Arithmetic(RpnTestCase):
 
 class Commands(RpnTestCase):
     def test_swap(self):
-        self.assertStack(run("1", "2", "x"), ["0.00", "0.00", "2.00", "1.00"])
+        self.assertStack(run("1", "2", "swap"),
+                         ["0.00", "0.00", "2.00", "1.00"])
+
+    def test_x_is_not_a_command(self):
+        result = run("1", "2", "x", "d")
+        self.assertError(result)
+        self.assertStack(result, ["0.00", "0.00", "0.00", "1.00"])
 
     def test_percent_keeps_y(self):
         self.assertStack(run("200", "15", "%"),
@@ -330,7 +350,7 @@ class Undo(RpnTestCase):
 
     def test_undo_each_command_type(self):
         cases = {
-            "x": ["1", "2", "x"],
+            "swap": ["1", "2", "swap"],
             "%": ["1", "2", "%"],
             "r": ["1", "2.345", "r"],
             "d": ["1", "2", "d"],
@@ -501,7 +521,7 @@ class Functions(RpnTestCase):
         """The last line is an error and the stack is left as it was."""
         before = self.last_display(run(*lines[:-1]))
         # Errors don't redisplay, so swap twice to show the stack again.
-        result = run(*lines, "x", "x")
+        result = run(*lines, "swap", "swap")
         self.assertError(result)
         self.assertClean(result)
         self.assertEqual(self.last_display(result), before)

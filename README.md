@@ -9,33 +9,52 @@ python3 rpn.py
 ## How it works
 
 Type a number or a command and press Enter. After each entry the calculator
-shows the top four stack entries, with the **top of the stack printed last**:
+shows the four most recent stack entries, with the **most recent printed
+last**, just above the prompt:
 
 ```
 > 1
-                0.00
-                0.00
-                0.00
-                1.00
+t:                 0.00
+z:                 0.00
+y:                 0.00
+x:                 1.00
 ```
 
-The stack holds 32 entries and starts out filled with zeros. Pushing onto a
-full stack discards the bottom entry.
+The stack holds 32 entries and starts out filled with zeros. It is always
+full, so entering a number discards the oldest entry.
+
+### Stack names: x, y, z, t
+
+Following HP calculator convention, the four most recent entries have names:
+
+| Name | Entry                                                     |
+|------|-----------------------------------------------------------|
+| *x*  | The most recent: what you just entered, or the last result. |
+| *y*  | The one before *x*.                                       |
+| *z*  | The one before *y*.                                       |
+| *t*  | The one before *z*.                                       |
+
+The rest of this document uses these names. Two-number operations work on
+*y* and *x* in that order, so `10 4 -` is *y* − *x* = 6, the same as writing
+10 − 4. When an operation uses up entries, the older ones shift down in the
+display to fill in: *z* becomes *y*, *t* becomes *z*, and so on. Unlike an
+HP, whose stack holds only these four, the stack is 32 entries deep, so
+there are older entries beyond *t* that aren't shown.
 
 ## Commands
 
 | Input        | Action                                                        |
 |--------------|---------------------------------------------------------------|
 | *number*     | Push onto the stack. Commas and a leading `$` are ignored (`$1,234.56`). |
-| `+ - * /`    | Replace the top two entries with the result (`y op x`).       |
-| `x`          | Exchange the top two entries.                                 |
-| `%`          | Percent: replaces the top with `y × x / 100`, keeping `y`.    |
-| `r`          | Round the top entry to the nearest cent.                      |
-| `d`          | Drop the top entry.                                           |
+| `+ - * /`    | Replace *y* and *x* with the result (*y* op *x*).             |
+| `swap`       | Exchange *x* and *y* (`x≷y` on an HP).                        |
+| `%`          | Percent: replace *x* with *y* × *x* / 100, keeping *y*.       |
+| `r`          | Round *x* to the nearest cent.                                |
+| `d`          | Drop *x*.                                                     |
 | `c`          | Clear the whole stack.                                        |
 | `u`          | Undo the last command (repeatable, up to 1000 levels).        |
-| `&`*mod.f*[`:`*n*] | Call a Python function on the top *n* entries (default 1), e.g. `&math.log`, `&math.pow:2` (see below). |
-| `&`*f*[`:`*n*] | Call a `Decimal` method, e.g. `&sqrt`, `&ln`, `&log10`, `&exp`. |
+| `&`*mod.f*[`:`*n*] | Call a Python function on the *n* most recent entries (default 1, just *x*), e.g. `&math.log`, `&math.pow:2` (see below). |
+| `&`*f*[`:`*n*] | Same as `&`*mod.f*[`:`*n*] with *mod* = `Decimal`: call a `Decimal` method, e.g. `&sqrt`, `&ln`, `&log10`, `&exp`. |
 | `@`*file*    | Run the commands in *file*, then return to the prompt (see below). |
 | `#` ...      | Comment; ignored.                                             |
 | `h`          | Show a summary of the commands.                               |
@@ -59,7 +78,7 @@ more keystroke:
 
 | Keys              | Result   |
 |-------------------|----------|
-| `200 15 %`        | `30.00` (15% of 200; 200 is still below it) |
+| `200 15 %`        | `30.00` (15% of 200; 200 is kept in *y*) |
 | `200 15 % +`      | `230.00` (200 plus 15%)  |
 | `200 15 % -`      | `170.00` (200 less 15%)  |
 
@@ -77,11 +96,15 @@ numbers works without being built in:
 
 - `&module.func` imports *module* (as needed) and calls *func*. The module
   can be dotted (`&os.path.func`).
-- `&name` with no dot calls the `Decimal` method *name* with *x* as `self`.
+- `&name` with no dot calls the `Decimal` method *name*, with the first
+  argument as `self` (*x* for one argument, *y* for `:2`, and so on).
   These keep full precision; `math` functions work in floating point
   (about 16 digits), and their result is converted back to a decimal.
-- `:`*n* takes *n* entries from the stack (default 1, may be 0), *y* before
-  *x*, and replaces them with the result.
+- `:`*n* passes the *n* most recent entries (default 1, may be 0) as
+  arguments, oldest first, and replaces them with the result. So
+  `&math.pow:2` calls `math.pow(y, x)`, which is *y*<sup>*x*</sup>, and a
+  three-argument call is `f(z, y, x)`. This is the same order
+  as `-` and `/`.
 - The result must be a finite number. Anything else (true/false, a tuple, a
   complex number, infinity) is an error, as is an error raised by the
   function (`&math.sqrt` of a negative number). Errors leave the stack
@@ -118,7 +141,7 @@ displayed once, when the file is done. Blank lines and lines starting with `#`
 are ignored, so a file can document itself:
 
 ```
-# markup.rpn: add 15% to whatever is on top of the stack
+# markup.rpn: add 15% to x
 15
 %
 +

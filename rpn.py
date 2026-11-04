@@ -13,24 +13,27 @@ from decimal import (Context, Decimal, DecimalException, InvalidOperation,
 getcontext().prec = 34
 
 STACK_SIZE = 32
-DISPLAY_ROWS = 4
+REGISTERS = "tzyx"  # HP names for the displayed entries; x is most recent
+DISPLAY_ROWS = len(REGISTERS)
 DISPLAY_WIDTH = 20
 UNDO_LEVELS = 1000
 MAX_INCLUDE_DEPTH = 16
 CENT = Decimal("0.01")
 
 HELP = """\
+The display shows the 4 most recent stack entries (x is most recent).
+
 number     Push onto the stack ($ and commas are ignored: $1,234.56)
-+ - * /    Replace the top two entries with y op x
-x          Exchange the top two entries
-%          Percent: replace the top with y * x / 100, keeping y
-r          Round the top entry to the nearest cent
-d          Drop the top entry
++ - * /    Replace y and x with y op x
+swap       Exchange x and y
+%          Percent: replace x with y * x / 100, keeping y
+r          Round x to the nearest cent
+d          Drop x
 c          Clear the whole stack
 u          Undo the last command (up to 1000 levels)
-&mod.f[:n] Call Python function mod.f on the top n entries (default 1),
-           y before x, e.g. &math.log, &math.pow:2
-&f[:n]     Call Decimal method f, e.g. &sqrt, &ln, &log10, &exp
+&mod.f[:n] Call Python funct mod.f on the n most recent stack entries [deflt 1]
+           For n>1, x is passed last. E.g. &math.pow:2 calls math.pow(y, x)
+&f[:n]     Same as &mod.f[:n] with mod=Decimal. E.g. &sqrt, &ln, &log10, &exp
 @file      Run the commands in file
 # ...      Comment; ignored
 h          Show this help
@@ -74,8 +77,8 @@ def fmt(value):
 
 
 def show():
-    for value in stack[-DISPLAY_ROWS:]:
-        print(fmt(value).rjust(DISPLAY_WIDTH))
+    for name, value in zip(REGISTERS, stack[-DISPLAY_ROWS:]):
+        print(f"{name}: {fmt(value).rjust(DISPLAY_WIDTH)}")
 
 
 OPS = {
@@ -139,7 +142,7 @@ def call_function(cmd):
     if not callable(func):
         raise CmdError(f"{name}: not a function")
 
-    args = stack[len(stack) - nargs:]  # y before x; nothing popped yet
+    args = stack[len(stack) - nargs:]  # oldest first: f(y, x); not popped yet
     try:
         result = func(*args)
     except DecimalException as e:  # str() is an unhelpful class list
@@ -200,7 +203,7 @@ def execute(line, base_dir=".", depth=0):
         b = pop()
         a = pop()
         push(OPS[cmd](a, b))
-    elif cmd == "x":
+    elif cmd == "swap":
         stack[-1], stack[-2] = stack[-2], stack[-1]
     elif cmd == "%":
         push(stack[-2] * pop() / 100)
@@ -218,7 +221,7 @@ def execute(line, base_dir=".", depth=0):
     else:
         value = parse_number(cmd)
         if value is None:
-            raise CmdError(f"unrecognized input: {cmd}")
+            raise CmdError(f"unrecognized input: {cmd} (enter 'h' for help)")
         push(value)
 
     history.append(saved)
