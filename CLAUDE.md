@@ -11,14 +11,20 @@ in `rpn.py`) in sync when commands change.
   - `push(v)` drops `stack[0]` (bottom) and appends.
   - `pop()` removes the top and inserts `Decimal(0)` at the bottom.
 - **Display**: `show()` prints the last `DISPLAY_ROWS` (4) entries, so the top
-  of the stack prints last. Right-aligned in 20 columns.
+  of the stack prints last. Right-aligned in 20 columns (wider values just
+  print wider).
 - **Currency mode** (currently the only mode):
-  - All values are `decimal.Decimal`, context precision 34. Never use float.
-  - `fmt()` rounds to `CENT` with `ROUND_HALF_UP` and adds `,` separators
-    for display only. The stack keeps full precision (HP-12C behavior).
+  - All values are `decimal.Decimal`, context precision 34. Never use float
+    (the one exception: `&module.func` results, see "Functions").
+  - `fmt()` rounds to `CENT` with `ROUND_HALF_UP` (via `round_cents()`) and
+    adds `,` separators for display only. `round_cents()` widens the context
+    precision for the quantize, so values of 1e32 and up don't raise. The
+    stack keeps full precision (HP-12C behavior).
   - `r` is the only command that changes a stored value's precision.
 - **Input parsing**: commas and a leading `$` are stripped before
   `Decimal(...)`. Comma placement is not validated (`1,2,3` → 123).
+  Non-finite values (`inf`, `nan`) are rejected; the stack only ever holds
+  finite Decimals (`fmt()` can't format the others).
 
 ## Commands
 
@@ -27,7 +33,8 @@ in `rpn.py`) in sync when commands change.
 | `+ - * /` | In the `OPS` dict as `f(a, b)` with `a` = y, `b` = x. Pops both, pushes result. |
 | `x` | Swap `stack[-1]` and `stack[-2]`. |
 | `%` | HP-12C style: `x = y * x / 100`, y is **kept** (so `+`/`-` then do markup/discount). |
-| `r` | Quantize x to cents, `ROUND_HALF_UP` (matches display rounding). |
+| `r` | `round_cents()`: quantize x to cents, `ROUND_HALF_UP` (matches display rounding). |
+| `&mod.f[:n]`, `&f[:n]` | `call_function()`. See "Functions". |
 | `d` | `pop()`. |
 | `c` | Reset all entries to 0. |
 | `u` | Undo. Restores `stack[:] = history.pop()`. Handled before `saved` is taken, so `u` itself is never recorded (no redo). |
@@ -46,6 +53,26 @@ Error handling: a failing command raises *before* modifying the stack, so the
 stack is unchanged. `main()` doesn't redisplay after an error unless the stack
 changed, which only happens when an include fails partway. Divide-by-zero is
 checked before popping.
+
+## Functions
+
+`&name[:n]` (parsed by `FUNC_RE`) calls a function by introspection, not by
+a list of known names:
+
+- Dotted name: `importlib.import_module()` on everything before the last dot,
+  then `getattr` the function. Modules are imported on demand, so nothing
+  (e.g. `math`) is imported at startup.
+- No dot: `getattr(Decimal, name)`, called unbound with x as `self`
+  (`Decimal.ln(x)`), so it uses the module context (precision 34).
+- `n` defaults to 1, may be 0, max `STACK_SIZE`. Arguments are
+  `stack[len(stack) - n:]` (not `stack[-n:]`, which is wrong for 0), so y
+  comes before x. They're read before popping; any exception from the call
+  becomes a `CmdError`, so the stack is untouched on failure.
+- `to_decimal()` accepts `int`, `float` (via `repr` → shortest decimal) and
+  `Decimal` results, and only finite ones. `bool` (an int subclass), tuples,
+  complex, `None`, etc. are errors.
+- Security is deliberately not a concern: anyone who can run this can
+  run arbitrary Python anyway.
 
 ## Command files
 
@@ -99,6 +126,8 @@ printf '200\n15\n%%\n+\n' | python3 rpn.py
 
 ## Possible future work (discussed, not requested)
 
-- Other modes besides currency (e.g. a general float/scientific mode).
+- Other modes besides currency (e.g. more decimals, scientific or
+  engineering display, possibly non-Decimal internals). `&` functions
+  make this more pressing: `2 &math.log` shows only `0.69`.
 - Optional banker's rounding (`ROUND_HALF_EVEN`) for `r`.
 - Validating comma placement in input.

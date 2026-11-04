@@ -488,5 +488,141 @@ class Include(RpnTestCase):
         self.assertNotIn("7.00", result.stdout)
 
 
+# ---------------------------------------------------------------- &function
+
+class Functions(RpnTestCase):
+    """&module.func[:n] calls a Python function; &name[:n] a Decimal method.
+
+    n (default 1) values are taken from the stack, y before x, and replaced
+    by the result.
+    """
+
+    def assertErrorUnchanged(self, *lines):
+        """The last line is an error and the stack is left as it was."""
+        before = self.last_display(run(*lines[:-1]))
+        # Errors don't redisplay, so swap twice to show the stack again.
+        result = run(*lines, "x", "x")
+        self.assertError(result)
+        self.assertClean(result)
+        self.assertEqual(self.last_display(result), before)
+        # Also not recorded for undo: u undoes the line before.
+        if len(lines) >= 2:
+            before_prev = self.last_display(run(*lines[:-2], "0"))
+            self.assertEqual(
+                self.last_display(run(*lines, "u", "0")), before_prev)
+
+    def test_module_function(self):
+        self.assertStack(run("7", "16", "&math.sqrt"),
+                         ["0.00", "0.00", "7.00", "4.00"])
+
+    def test_arity_suffix_y_before_x(self):
+        self.assertStack(run("5", "2", "10", "&math.pow:2"),
+                         ["0.00", "0.00", "5.00", "1,024.00"])
+
+    def test_arity_zero(self):
+        result = run("5", "&random.random:0")
+        self.assertNotIn("Error", result.stdout + result.stderr)
+        display = self.last_display(result)
+        self.assertEqual(display[-2], "5.00")
+        self.assertIn(display[-1], [f"{i / 100:.2f}" for i in range(101)])
+
+    def test_int_result(self):
+        self.assertTop(run("7.9", "&math.floor"), "7.00")
+
+    def test_float_result_converted(self):
+        # repr-based conversion: 0.1 stays 0.1, not 0.1000000000000000055...
+        self.assertTop(run("1", "10", "&operator.truediv:2",
+                           "1000000000000000000", "*"),
+                       "100,000,000,000,000,000.00")
+
+    def test_decimal_method(self):
+        self.assertTop(run("100", "&log10"), "2.00")
+        self.assertTop(run("1", "&exp", "&ln"), "1.00")
+
+    def test_decimal_method_full_precision(self):
+        # Decimal sqrt keeps 34 digits; a float would give ...095,100.00
+        self.assertTop(run("2", "&sqrt", "1000000000000000000", "*"),
+                       "1,414,213,562,373,095,048.80")
+
+    def test_decimal_method_with_arity_order(self):
+        # fma(self, other, third) = self * other + third
+        self.assertStack(run("2", "3", "4", "&fma:3"),
+                         ["0.00", "0.00", "0.00", "10.00"])
+
+    def test_undo(self):
+        self.assertStack(run("7", "16", "&math.sqrt", "u"),
+                         ["0.00", "0.00", "7.00", "16.00"])
+
+    def test_domain_error(self):
+        self.assertErrorUnchanged("1", "-1", "&math.sqrt")
+
+    def test_decimal_domain_error(self):
+        self.assertErrorUnchanged("1", "-1", "&ln")
+
+    def test_overflow_error(self):
+        self.assertErrorUnchanged("1", "1000", "&math.exp")
+
+    def test_infinite_result_is_error(self):
+        self.assertErrorUnchanged("1", "0", "&ln")  # Decimal ln(0) = -inf
+
+    def test_wrong_argument_count(self):
+        self.assertErrorUnchanged("1", "2", "&math.pow")
+
+    def test_unknown_module(self):
+        self.assertErrorUnchanged("1", "2", "&nosuchmodule.f")
+
+    def test_unknown_function(self):
+        self.assertErrorUnchanged("1", "2", "&math.nosuch")
+
+    def test_unknown_decimal_method(self):
+        self.assertErrorUnchanged("1", "2", "&nosuch")
+
+    def test_not_callable(self):
+        self.assertErrorUnchanged("1", "2", "&math.pi")
+
+    def test_bool_result_is_error(self):
+        self.assertErrorUnchanged("1", "2", "&math.isfinite")
+
+    def test_tuple_result_is_error(self):
+        self.assertErrorUnchanged("1", "2", "&math.frexp")
+
+    def test_complex_result_is_error(self):
+        self.assertErrorUnchanged("1", "-1", "&cmath.sqrt")
+
+    def test_bad_syntax(self):
+        for cmd in ["&", "&:2", "&math.", "&math.sqrt:", "&math.sqrt:x",
+                    "&math.sqrt:-1", "&math.sqrt:33", "&math..sqrt"]:
+            with self.subTest(cmd=cmd):
+                self.assertErrorUnchanged("1", "2", cmd)
+
+    def test_in_command_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            write(os.path.join(d, "f.rpn"), "2", "10", "&math.pow:2")
+            self.assertTop(run("@f.rpn", cwd=d), "1,024.00")
+
+
+# ---------------------------------------------------------------- big values
+
+class BigValues(RpnTestCase):
+    def test_huge_value_displays(self):
+        result = run("1e40")
+        self.assertClean(result)
+        self.assertTop(result, "10,000,000,000,000,000,000,000,000,000,000,"
+                               "000,000,000.00")
+
+    def test_round_huge_value(self):
+        result = run("1e40", "r")
+        self.assertClean(result)
+        self.assertNotIn("Error", result.stdout + result.stderr)
+
+    def test_inf_and_nan_rejected(self):
+        for text in ["inf", "-Infinity", "nan", "sNaN"]:
+            with self.subTest(text=text):
+                result = run("1", text, "2", "+")
+                self.assertError(result)
+                self.assertClean(result)
+                self.assertTop(result, "3.00")
+
+
 if __name__ == "__main__":
     unittest.main()
