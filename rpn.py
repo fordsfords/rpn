@@ -7,6 +7,10 @@ See README.md for usage and CLAUDE.md for design notes.
 import importlib
 import os
 import re
+try:
+    import readline  # noqa: F401  (just importing it gives input() editing)
+except ImportError:  # e.g. Windows
+    pass
 from decimal import (Context, Decimal, DecimalException, InvalidOperation,
                      ROUND_HALF_UP, getcontext)
 

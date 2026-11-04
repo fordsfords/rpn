@@ -32,6 +32,10 @@ in `rpn.py`) in sync when commands change.
     precision for the quantize, so values of 1e32 and up don't raise. The
     stack keeps full precision (HP-12C behavior).
   - `r` is the only command that changes a stored value's precision.
+- **Line editing**: `import readline` (optional, skipped on `ImportError`)
+  is all it takes: `input()` then uses it. Session history only; no history
+  file (not requested). Readline isn't used when stdin isn't a terminal, so
+  piped input and the tests are unaffected.
 - **Input parsing**: commas and a leading `$` are stripped before
   `Decimal(...)`. Comma placement is not validated (`1,2,3` → 123).
   Non-finite values (`inf`, `nan`) are rejected; the stack only ever holds

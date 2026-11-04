@@ -23,6 +23,10 @@ x:                 1.00
 The stack holds 32 entries and starts out filled with zeros. It is always
 full, so entering a number discards the oldest entry.
 
+Where Python has `readline` (Linux, macOS), the prompt supports the usual
+shell-style line editing and up-arrow history for the session, with your
+`~/.inputrc` settings (e.g. `set editing-mode vi`).
+
 ### Stack names: x, y, z, t
 
 Following HP calculator convention, the four most recent entries have names:
